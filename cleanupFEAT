@@ -1,0 +1,118 @@
+#!/bin/sh
+#
+#   Copyright (C) Eugene Duff 2004 University of Oxford
+#
+#   SHCOPYRIGHT
+
+Usage() {
+	function=`basename $0`
+	echo $function [options] featdirs 
+	echo 
+	echo $function removes large files that are not typically necessary for subsequent second-level analyses or for the web-page report. 
+	echo
+	echo Files removed: 
+	echo 
+	echo 	var_filtered_func_data.\*
+	echo 	rendered\*
+	echo 	cluster_mask\*
+	echo 	stats/res4d.\* 
+	echo 	stats/tstat\* 
+	echo 	reg_standard/ directory 
+	echo 
+	echo Options:
+	echo
+	echo -t remove tsplot files \(affects web-page report\)
+	echo -r remove registration image directory reg/
+	echo -z remove zstat images
+    echo -thr remove thresh_ image files 
+	echo -f remove filtered_func_data\* file
+exit 1
+}
+
+[ "$1" = "" ] && Usage
+
+firstchar=`echo $1 | head -c 1`
+
+nfflag=0
+zflag=0
+
+while [[ $firstchar == '-' ]]
+do	
+	if [[ $1 == -t ]]
+	then 	tsplotflag=1
+	shift 1
+	fi
+
+	if [[ $1 == -r ]]
+	then 	regflag=1
+	shift 1
+	fi
+
+	if [[ $1 == -f ]]
+	then 	nfflag=1
+	shift 1
+	fi
+
+	if [[ $1 == -thr ]]
+	then 	thrflag=1
+	shift 1
+	fi
+
+	if [[ $1 == -z ]]
+	then 	zflag=1
+	shift 1
+	fi
+
+
+	firstchar=`echo $1 | head -c 1`
+done
+
+origdir=`pwd`
+
+for a in $@;do
+
+	cd $a;
+    dirs='.'
+    currdir=`pwd`    
+
+    if [[ ${currdir: -5} == 'gfeat' ]];
+    then dirs=`ls -d cope*feat`
+    fi
+
+    for b in $dirs;
+    do
+        cd $b
+        echo Cleaning up `pwd`
+
+        rm -f rend*gz rend*nii
+        rm -f cluster_mask*nii cluster_mask*gz
+        rm -f stats/zflam*nii stats/zflam*gz
+        rm -f stats/tsta*nii stats/tsta*gz
+        rm -f var_filtered_func*
+        rm -f stats/res4d*
+        rm -f stats/correction*
+        
+
+        [[ $regflag == 1 && -d reg ]] &&  rm -fr reg_standard
+
+        [[ $thrflag == 1 && -d reg ]] &&  rm -f thresh*nii thresh*gz
+
+        [[ $nfflag == 1 ]] && rm -f filtered_func*[^a]
+
+        [[ $zflag == 1 ]] && rm -f stats/zsta*nii stats/zsta*gz
+
+        [[ "$tsplotflag" == 1 ]] && rm -rf tsplot
+
+        [[ $regflag == 1 && -d reg ]] && rm -fr reg
+
+        [[ $regflag == 1 && -d reg ]] && rm -fr reg_standard
+        cd ../
+    done
+
+    echo $a	
+    cd $origdir
+	
+done
+
+cd $origdir
+

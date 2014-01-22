@@ -1,0 +1,187 @@
+#!/bin/sh
+#
+#   Copyright (C) Eugene Duff 2013 University of Oxford
+#
+#   SHCOPYRIGHT
+
+Usage() {
+	function=`basename $0`
+	echo $function [options] featdir outputdir
+    echo Takes a FEAT directory and bundles all essential data of all levels of analysis into a single directory.
+    echo 
+    echo -tar  featdir outputdir  - tar final directory into single file
+    echo -untar ouputdir newbasedir - untars directory and updates directory locations 
+    echo
+    echo Requires setFEAT,cleanupFEAT,queryFEAT
+	exit 1
+}
+
+[ "$1" = "" ] && Usage
+
+firstchar=`echo $1 | head -c 1`
+
+while [[ $firstchar == '-' ]]
+do
+        if [[ $1 == -tar ]]
+        then tar=1
+        else 
+            tar=''
+        fi
+
+        if [[ $1 == -untar ]]
+        then untar=1
+        else 
+            untar=''
+        fi
+
+        shift 1
+        firstchar=`echo $1 | head -c 1`
+done
+
+
+echo $1  $untar
+
+
+if [[ $untar == 1 ]];
+then 
+    echo Extracting..
+    echo tar -xcf  $1
+    tar -xvf  $1
+
+    echo Refreshing output directories
+
+    oldoutput=`grep "feat_files(1)" design.fsf | grep -o \".*\" | sed 's/\"//g;s/[^\/]*feat//g'`
+    newoutput=`pwd`
+
+    for a in `find . -name design.fsf`;
+    do  setFEAT $a $a -replace $oldoutput $newoutput
+    done
+    exit
+fi
+
+featdir=$1
+outputdir=$2
+
+if [ ! -e $featdir ];
+then echo $outputdir does not exist!
+     exit
+fi
+
+if [[ $# == 2 ]];
+then
+    echo Making copy of directory
+    if [ -e $outputdir ];
+    then echo $outputdir is already a directory!
+         exit
+    fi
+
+    cp -rL $featdir $outputdir
+else    outputdir=$featdir
+fi
+# backup old design file
+designfile=$outputdir/design.fsf
+cp $designfile $outputdir/design_orig.fsf
+level=`queryFEAT $designfile -level`
+fsfile=`cat $outputdir/design.fsf`
+
+case $outputdir in
+    /*) outputfulldir=$outputdir ;;
+    ~*) outputfulldir=$outputdir ;;
+    *) outputfulldir=`pwd`/$outputdir
+esac
+
+setFEAT $designfile $designfile -outputfulldir $outputdir 
+
+cnt=1
+
+infiles=`grep feat_files $designfile | grep -o \".*\" | sed 's/\"//g'`
+
+if [[ $level == 2 ]];
+then
+    echo Copying input dirs
+    for b in $infiles;
+    do  
+        newdir=$outputfulldir/input_$cnt.feat
+        echo Copying $b to $newdir
+        echo Bundling lower level directory $b as $newdir
+        bundleFEAT $b $newdir
+        setFEAT -i $designfile -replace $b $newdir
+        cleanupFEAT -r -thr $newdir
+
+        let cnt=$cnt+1
+    done
+
+    for c in threshmask; do
+        
+        fsf_settings=`grep $c $designfile | grep -o \".*\" | sed 's/\"//g'`
+        if [[ ! $fsf_settings == '' ]];then
+            echo Copying and updating $c
+        fi
+
+
+        cnt=1
+        for d in $fsf_settings;do
+            
+            newfile=$outputfulldir/${c}_${cnt}
+            if [ `imtest $d` == 1 ];
+            then  imcp $d $newfile
+            else
+                  imcp $d $newfile
+            fi
+
+            setFEAT -i $designfile -replace $d $newfile
+            let cnt=cnt+1
+
+        done
+    done
+
+    # copy design.fsf to cope.feat dirs
+    for copedir in $outputfulldir/cope*feat;do
+        cp $designfile $copedir;
+    done
+
+else
+
+    for c in custom highres_files initial_highres init_highres unwarp_files unwarp_files_mag feat_files st_file motionevsbeta scriptevsbeta threshmask regstandard alternative_example_func alternative_mask init_initial_highres init_highres init_standard; do
+
+        fsf_settings=`grep $c $designfile | grep -o \".*\" | sed 's/\"//g'`
+        if [[ ! $fsf_settings == '' ]];then
+            echo Copying and updating $c
+        fi
+
+        cnt=1
+        for d in $fsf_settings;do
+            
+            newfile=$outputfulldir/${c}_${cnt}
+
+            # copy file, testing if image and "_brain" image
+            echo $d
+            if [ `imtest $d` == 1 ] && [ ${d/_brain/} == ${d} ];
+            then  imcp $d $newfile
+            elif  [ `imtest $d` == 1 ];
+            then  
+                imcp ${d/_brain/} $newfile
+                newfile=${newfile}_brain
+                imcp $d $newfile 
+            else
+                  cp $d $newfile
+            fi
+
+            setFEAT -i $designfile -replace $d $newfile
+
+            let cnt=cnt+1
+
+        done
+
+    done
+fi
+
+cleanupFEAT -r -thr $outputdir
+
+if [[ ! $tar == '' ]]; then 
+    echo Creating tar file
+    tar -cvf ${outputdir}.tar $outputdir
+fi
+
+# create rerun script
+
